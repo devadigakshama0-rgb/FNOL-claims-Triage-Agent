@@ -1,172 +1,348 @@
-# YAML <a href="https://www.npmjs.com/package/yaml"><img align="right" src="https://badge.fury.io/js/yaml.svg" title="npm package" /></a>
+# @jridgewell/trace-mapping
 
-`yaml` is a definitive library for [YAML](https://yaml.org/), the human friendly data serialization standard.
-This library:
+> Trace the original position through a source map
 
-- Supports both YAML 1.1 and YAML 1.2 and all common data schemas,
-- Passes all of the [yaml-test-suite](https://github.com/yaml/yaml-test-suite) tests,
-- Can accept any string as input without throwing, parsing as much YAML out of it as it can, and
-- Supports parsing, modifying, and writing YAML comments and blank lines.
+`trace-mapping` allows you to take the line and column of an output file and trace it to the
+original location in the source file through a source map.
 
-The library is released under the ISC open source license, and the code is [available on GitHub](https://github.com/eemeli/yaml/).
-It has no external dependencies and runs on Node.js as well as modern browsers.
+You may already be familiar with the [`source-map`][source-map] package's `SourceMapConsumer`. This
+provides the same `originalPositionFor` and `generatedPositionFor` API, without requiring WASM.
 
-For the purposes of versioning, any changes that break any of the documented endpoints or APIs will be considered semver-major breaking changes.
-Undocumented library internals may change between minor versions, and previous APIs may be deprecated (but not removed).
-
-The minimum supported TypeScript version of the included typings is 3.9;
-for use in earlier versions you may need to set `skipLibCheck: true` in your config.
-This requirement may be updated between minor versions of the library.
-
-For more information, see the project's documentation site: [**eemeli.org/yaml**](https://eemeli.org/yaml/)
-
-For build instructions and contribution guidelines, see [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md).
-
-To install:
+## Installation
 
 ```sh
-npm install yaml
-# or
-deno add jsr:@eemeli/yaml
+npm install @jridgewell/trace-mapping
 ```
 
-**Note:** These docs are for `yaml@2`. For v1, see the [v1.10.0 tag](https://github.com/eemeli/yaml/tree/v1.10.0) for the source and [eemeli.org/yaml/v1](https://eemeli.org/yaml/v1/) for the documentation.
+## Usage
 
-## API Overview
-
-The API provided by `yaml` has three layers, depending on how deep you need to go: [Parse & Stringify](https://eemeli.org/yaml/#parse-amp-stringify), [Documents](https://eemeli.org/yaml/#documents), and the underlying [Lexer/Parser/Composer](https://eemeli.org/yaml/#parsing-yaml).
-The first has the simplest API and "just works", the second gets you all the bells and whistles supported by the library along with a decent [AST](https://eemeli.org/yaml/#content-nodes), and the third lets you get progressively closer to YAML source, if that's your thing.
-
-A [command-line tool](https://eemeli.org/yaml/#command-line-tool) is also included.
-
-### Parse & Stringify
-
-```js
-import { parse, stringify } from 'yaml'
-```
-
-- [`parse(str, reviver?, options?): value`](https://eemeli.org/yaml/#yaml-parse)
-- [`stringify(value, replacer?, options?): string`](https://eemeli.org/yaml/#yaml-stringify)
-
-### Documents
-
-<!-- prettier-ignore -->
-```js
+```typescript
 import {
-  Document,
-  isDocument,
-  parseAllDocuments,
-  parseDocument
-} from 'yaml'
+  TraceMap,
+  originalPositionFor,
+  generatedPositionFor,
+  sourceContentFor,
+  isIgnored,
+} from '@jridgewell/trace-mapping';
+
+const tracer = new TraceMap({
+  version: 3,
+  sources: ['input.js'],
+  sourcesContent: ['content of input.js'],
+  names: ['foo'],
+  mappings: 'KAyCIA',
+  ignoreList: [],
+});
+
+// Lines start at line 1, columns at column 0.
+const traced = originalPositionFor(tracer, { line: 1, column: 5 });
+assert.deepEqual(traced, {
+  source: 'input.js',
+  line: 42,
+  column: 4,
+  name: 'foo',
+});
+
+const content = sourceContentFor(tracer, traced.source);
+assert.strictEqual(content, 'content for input.js');
+
+const generated = generatedPositionFor(tracer, {
+  source: 'input.js',
+  line: 42,
+  column: 4,
+});
+assert.deepEqual(generated, {
+  line: 1,
+  column: 5,
+});
+
+const ignored = isIgnored(tracer, 'input.js');
+assert.equal(ignored, false);
 ```
 
-- [`Document`](https://eemeli.org/yaml/#documents)
-  - [`constructor(value, replacer?, options?)`](https://eemeli.org/yaml/#creating-documents)
-  - [`#contents`](https://eemeli.org/yaml/#content-nodes)
-  - [`#directives`](https://eemeli.org/yaml/#stream-directives)
-  - [`#errors`](https://eemeli.org/yaml/#errors)
-  - [`#warnings`](https://eemeli.org/yaml/#errors)
-- [`isDocument(foo): boolean`](https://eemeli.org/yaml/#identifying-node-types)
-- [`parseAllDocuments(str, options?): Document[]`](https://eemeli.org/yaml/#parsing-documents)
-- [`parseDocument(str, options?): Document`](https://eemeli.org/yaml/#parsing-documents)
+We also provide a lower level API to get the actual segment that matches our line and column. Unlike
+`originalPositionFor`, `traceSegment` uses a 0-base for `line`:
 
-### Content Nodes
+```typescript
+import { traceSegment } from '@jridgewell/trace-mapping';
 
-<!-- prettier-ignore -->
-```js
-import {
-  isAlias, isCollection, isMap, isNode,
-  isPair, isScalar, isSeq, Scalar,
-  visit, visitAsync, YAMLMap, YAMLSeq
-} from 'yaml'
+// line is 0-base.
+const traced = traceSegment(tracer, /* line */ 0, /* column */ 5);
+
+// Segments are [outputColumn, sourcesIndex, sourceLine, sourceColumn, namesIndex]
+// Again, line is 0-base and so is sourceLine
+assert.deepEqual(traced, [5, 0, 41, 4, 0]);
 ```
 
-- [`isAlias(foo): boolean`](https://eemeli.org/yaml/#identifying-node-types)
-- [`isCollection(foo): boolean`](https://eemeli.org/yaml/#identifying-node-types)
-- [`isMap(foo): boolean`](https://eemeli.org/yaml/#identifying-node-types)
-- [`isNode(foo): boolean`](https://eemeli.org/yaml/#identifying-node-types)
-- [`isPair(foo): boolean`](https://eemeli.org/yaml/#identifying-node-types)
-- [`isScalar(foo): boolean`](https://eemeli.org/yaml/#identifying-node-types)
-- [`isSeq(foo): boolean`](https://eemeli.org/yaml/#identifying-node-types)
-- [`new Scalar(value)`](https://eemeli.org/yaml/#scalar-values)
-- [`new YAMLMap()`](https://eemeli.org/yaml/#collections)
-- [`new YAMLSeq()`](https://eemeli.org/yaml/#collections)
-- [`doc.createAlias(node, name?): Alias`](https://eemeli.org/yaml/#creating-nodes)
-- [`doc.createNode(value, options?): Node`](https://eemeli.org/yaml/#creating-nodes)
-- [`doc.createPair(key, value): Pair`](https://eemeli.org/yaml/#creating-nodes)
-- [`visit(node, visitor)`](https://eemeli.org/yaml/#finding-and-modifying-nodes)
-- [`visitAsync(node, visitor)`](https://eemeli.org/yaml/#finding-and-modifying-nodes)
+### SectionedSourceMaps
 
-### Parsing YAML
+The sourcemap spec defines a special `sections` field that's designed to handle concatenation of
+output code with associated sourcemaps. This type of sourcemap is rarely used (no major build tool
+produces it), but if you are hand coding a concatenation you may need it. We provide an `AnyMap`
+helper that can receive either a regular sourcemap or a `SectionedSourceMap` and returns a
+`TraceMap` instance:
 
-```js
-import { Composer, Lexer, Parser } from 'yaml'
+```typescript
+import { AnyMap } from '@jridgewell/trace-mapping';
+const fooOutput = 'foo';
+const barOutput = 'bar';
+const output = [fooOutput, barOutput].join('\n');
+
+const sectioned = new AnyMap({
+  version: 3,
+  sections: [
+    {
+      // 0-base line and column
+      offset: { line: 0, column: 0 },
+      // fooOutput's sourcemap
+      map: {
+        version: 3,
+        sources: ['foo.js'],
+        names: ['foo'],
+        mappings: 'AAAAA',
+      },
+    },
+    {
+      // barOutput's sourcemap will not affect the first line, only the second
+      offset: { line: 1, column: 0 },
+      map: {
+        version: 3,
+        sources: ['bar.js'],
+        names: ['bar'],
+        mappings: 'AAAAA',
+      },
+    },
+  ],
+});
+
+const traced = originalPositionFor(sectioned, {
+  line: 2,
+  column: 0,
+});
+
+assert.deepEqual(traced, {
+  source: 'bar.js',
+  line: 1,
+  column: 0,
+  name: 'bar',
+});
 ```
 
-- [`new Lexer().lex(src)`](https://eemeli.org/yaml/#lexer)
-- [`new Parser(onNewLine?).parse(src)`](https://eemeli.org/yaml/#parser)
-- [`new Composer(options?).compose(tokens)`](https://eemeli.org/yaml/#composer)
+## Benchmarks
 
-## YAML.parse
+```
+node v20.10.0
 
-```yaml
-# file.yml
-YAML:
-  - A human-readable data serialization language
-  - https://en.wikipedia.org/wiki/YAML
-yaml:
-  - A complete JavaScript implementation
-  - https://www.npmjs.com/package/yaml
+amp.js.map - 45120 segments
+
+Memory Usage:
+trace-mapping decoded         414164 bytes
+trace-mapping encoded        6274352 bytes
+source-map-js               10968904 bytes
+source-map-0.6.1            17587160 bytes
+source-map-0.8.0             8812155 bytes
+Chrome dev tools             8672912 bytes
+Smallest memory usage is trace-mapping decoded
+
+Init speed:
+trace-mapping:    decoded JSON input x 205 ops/sec ±0.19% (88 runs sampled)
+trace-mapping:    encoded JSON input x 405 ops/sec ±1.47% (88 runs sampled)
+trace-mapping:    decoded Object input x 4,645 ops/sec ±0.15% (98 runs sampled)
+trace-mapping:    encoded Object input x 458 ops/sec ±1.63% (91 runs sampled)
+source-map-js:    encoded Object input x 75.48 ops/sec ±1.64% (67 runs sampled)
+source-map-0.6.1: encoded Object input x 39.37 ops/sec ±1.44% (53 runs sampled)
+Chrome dev tools: encoded Object input x 150 ops/sec ±1.76% (79 runs sampled)
+Fastest is trace-mapping:    decoded Object input
+
+Trace speed (random):
+trace-mapping:    decoded originalPositionFor x 44,946 ops/sec ±0.16% (99 runs sampled)
+trace-mapping:    encoded originalPositionFor x 37,995 ops/sec ±1.81% (89 runs sampled)
+source-map-js:    encoded originalPositionFor x 9,230 ops/sec ±1.36% (93 runs sampled)
+source-map-0.6.1: encoded originalPositionFor x 8,057 ops/sec ±0.84% (96 runs sampled)
+source-map-0.8.0: encoded originalPositionFor x 28,198 ops/sec ±1.12% (91 runs sampled)
+Chrome dev tools: encoded originalPositionFor x 46,276 ops/sec ±1.35% (95 runs sampled)
+Fastest is Chrome dev tools: encoded originalPositionFor
+
+Trace speed (ascending):
+trace-mapping:    decoded originalPositionFor x 204,406 ops/sec ±0.19% (97 runs sampled)
+trace-mapping:    encoded originalPositionFor x 196,695 ops/sec ±0.24% (99 runs sampled)
+source-map-js:    encoded originalPositionFor x 11,948 ops/sec ±0.94% (99 runs sampled)
+source-map-0.6.1: encoded originalPositionFor x 10,730 ops/sec ±0.36% (100 runs sampled)
+source-map-0.8.0: encoded originalPositionFor x 51,427 ops/sec ±0.21% (98 runs sampled)
+Chrome dev tools: encoded originalPositionFor x 162,615 ops/sec ±0.18% (98 runs sampled)
+Fastest is trace-mapping:    decoded originalPositionFor
+
+
+***
+
+
+babel.min.js.map - 347793 segments
+
+Memory Usage:
+trace-mapping decoded          18504 bytes
+trace-mapping encoded       35428008 bytes
+source-map-js               51676808 bytes
+source-map-0.6.1            63367136 bytes
+source-map-0.8.0            43158400 bytes
+Chrome dev tools            50721552 bytes
+Smallest memory usage is trace-mapping decoded
+
+Init speed:
+trace-mapping:    decoded JSON input x 17.82 ops/sec ±6.35% (35 runs sampled)
+trace-mapping:    encoded JSON input x 31.57 ops/sec ±7.50% (43 runs sampled)
+trace-mapping:    decoded Object input x 867 ops/sec ±0.74% (94 runs sampled)
+trace-mapping:    encoded Object input x 33.83 ops/sec ±7.66% (46 runs sampled)
+source-map-js:    encoded Object input x 6.58 ops/sec ±3.31% (20 runs sampled)
+source-map-0.6.1: encoded Object input x 4.23 ops/sec ±3.43% (15 runs sampled)
+Chrome dev tools: encoded Object input x 22.14 ops/sec ±3.79% (41 runs sampled)
+Fastest is trace-mapping:    decoded Object input
+
+Trace speed (random):
+trace-mapping:    decoded originalPositionFor x 78,234 ops/sec ±1.48% (29 runs sampled)
+trace-mapping:    encoded originalPositionFor x 60,761 ops/sec ±1.35% (21 runs sampled)
+source-map-js:    encoded originalPositionFor x 51,448 ops/sec ±2.17% (89 runs sampled)
+source-map-0.6.1: encoded originalPositionFor x 47,221 ops/sec ±1.99% (15 runs sampled)
+source-map-0.8.0: encoded originalPositionFor x 84,002 ops/sec ±1.45% (27 runs sampled)
+Chrome dev tools: encoded originalPositionFor x 106,457 ops/sec ±1.38% (37 runs sampled)
+Fastest is Chrome dev tools: encoded originalPositionFor
+
+Trace speed (ascending):
+trace-mapping:    decoded originalPositionFor x 930,943 ops/sec ±0.25% (99 runs sampled)
+trace-mapping:    encoded originalPositionFor x 843,545 ops/sec ±0.34% (97 runs sampled)
+source-map-js:    encoded originalPositionFor x 114,510 ops/sec ±1.37% (36 runs sampled)
+source-map-0.6.1: encoded originalPositionFor x 87,412 ops/sec ±0.72% (92 runs sampled)
+source-map-0.8.0: encoded originalPositionFor x 197,709 ops/sec ±0.89% (59 runs sampled)
+Chrome dev tools: encoded originalPositionFor x 688,983 ops/sec ±0.33% (98 runs sampled)
+Fastest is trace-mapping:    decoded originalPositionFor
+
+
+***
+
+
+preact.js.map - 1992 segments
+
+Memory Usage:
+trace-mapping decoded          33136 bytes
+trace-mapping encoded         254240 bytes
+source-map-js                 837488 bytes
+source-map-0.6.1              961928 bytes
+source-map-0.8.0               54384 bytes
+Chrome dev tools              709680 bytes
+Smallest memory usage is trace-mapping decoded
+
+Init speed:
+trace-mapping:    decoded JSON input x 3,709 ops/sec ±0.13% (99 runs sampled)
+trace-mapping:    encoded JSON input x 6,447 ops/sec ±0.22% (101 runs sampled)
+trace-mapping:    decoded Object input x 83,062 ops/sec ±0.23% (100 runs sampled)
+trace-mapping:    encoded Object input x 14,980 ops/sec ±0.28% (100 runs sampled)
+source-map-js:    encoded Object input x 2,544 ops/sec ±0.16% (99 runs sampled)
+source-map-0.6.1: encoded Object input x 1,221 ops/sec ±0.37% (97 runs sampled)
+Chrome dev tools: encoded Object input x 4,241 ops/sec ±0.39% (93 runs sampled)
+Fastest is trace-mapping:    decoded Object input
+
+Trace speed (random):
+trace-mapping:    decoded originalPositionFor x 91,028 ops/sec ±0.14% (94 runs sampled)
+trace-mapping:    encoded originalPositionFor x 84,348 ops/sec ±0.26% (98 runs sampled)
+source-map-js:    encoded originalPositionFor x 26,998 ops/sec ±0.23% (98 runs sampled)
+source-map-0.6.1: encoded originalPositionFor x 18,049 ops/sec ±0.26% (100 runs sampled)
+source-map-0.8.0: encoded originalPositionFor x 41,916 ops/sec ±0.28% (98 runs sampled)
+Chrome dev tools: encoded originalPositionFor x 88,616 ops/sec ±0.14% (98 runs sampled)
+Fastest is trace-mapping:    decoded originalPositionFor
+
+Trace speed (ascending):
+trace-mapping:    decoded originalPositionFor x 319,960 ops/sec ±0.16% (100 runs sampled)
+trace-mapping:    encoded originalPositionFor x 302,153 ops/sec ±0.18% (100 runs sampled)
+source-map-js:    encoded originalPositionFor x 35,574 ops/sec ±0.19% (100 runs sampled)
+source-map-0.6.1: encoded originalPositionFor x 19,943 ops/sec ±0.12% (101 runs sampled)
+source-map-0.8.0: encoded originalPositionFor x 54,648 ops/sec ±0.20% (99 runs sampled)
+Chrome dev tools: encoded originalPositionFor x 278,319 ops/sec ±0.17% (102 runs sampled)
+Fastest is trace-mapping:    decoded originalPositionFor
+
+
+***
+
+
+react.js.map - 5726 segments
+
+Memory Usage:
+trace-mapping decoded          10872 bytes
+trace-mapping encoded         681512 bytes
+source-map-js                2563944 bytes
+source-map-0.6.1             2150864 bytes
+source-map-0.8.0               88680 bytes
+Chrome dev tools             1149576 bytes
+Smallest memory usage is trace-mapping decoded
+
+Init speed:
+trace-mapping:    decoded JSON input x 1,887 ops/sec ±0.28% (99 runs sampled)
+trace-mapping:    encoded JSON input x 4,749 ops/sec ±0.48% (97 runs sampled)
+trace-mapping:    decoded Object input x 74,236 ops/sec ±0.11% (99 runs sampled)
+trace-mapping:    encoded Object input x 5,752 ops/sec ±0.38% (100 runs sampled)
+source-map-js:    encoded Object input x 806 ops/sec ±0.19% (97 runs sampled)
+source-map-0.6.1: encoded Object input x 418 ops/sec ±0.33% (94 runs sampled)
+Chrome dev tools: encoded Object input x 1,524 ops/sec ±0.57% (92 runs sampled)
+Fastest is trace-mapping:    decoded Object input
+
+Trace speed (random):
+trace-mapping:    decoded originalPositionFor x 620,201 ops/sec ±0.33% (96 runs sampled)
+trace-mapping:    encoded originalPositionFor x 579,548 ops/sec ±0.35% (97 runs sampled)
+source-map-js:    encoded originalPositionFor x 230,983 ops/sec ±0.62% (54 runs sampled)
+source-map-0.6.1: encoded originalPositionFor x 158,145 ops/sec ±0.80% (46 runs sampled)
+source-map-0.8.0: encoded originalPositionFor x 343,801 ops/sec ±0.55% (96 runs sampled)
+Chrome dev tools: encoded originalPositionFor x 659,649 ops/sec ±0.49% (98 runs sampled)
+Fastest is Chrome dev tools: encoded originalPositionFor
+
+Trace speed (ascending):
+trace-mapping:    decoded originalPositionFor x 2,368,079 ops/sec ±0.32% (98 runs sampled)
+trace-mapping:    encoded originalPositionFor x 2,134,039 ops/sec ±2.72% (87 runs sampled)
+source-map-js:    encoded originalPositionFor x 290,120 ops/sec ±2.49% (82 runs sampled)
+source-map-0.6.1: encoded originalPositionFor x 187,613 ops/sec ±0.86% (49 runs sampled)
+source-map-0.8.0: encoded originalPositionFor x 479,569 ops/sec ±0.65% (96 runs sampled)
+Chrome dev tools: encoded originalPositionFor x 2,048,414 ops/sec ±0.24% (98 runs sampled)
+Fastest is trace-mapping:    decoded originalPositionFor
+
+
+***
+
+
+vscode.map - 2141001 segments
+
+Memory Usage:
+trace-mapping decoded        5206584 bytes
+trace-mapping encoded      208370336 bytes
+source-map-js              278493008 bytes
+source-map-0.6.1           391564048 bytes
+source-map-0.8.0           257508787 bytes
+Chrome dev tools           291053000 bytes
+Smallest memory usage is trace-mapping decoded
+
+Init speed:
+trace-mapping:    decoded JSON input x 1.63 ops/sec ±33.88% (9 runs sampled)
+trace-mapping:    encoded JSON input x 3.29 ops/sec ±36.13% (13 runs sampled)
+trace-mapping:    decoded Object input x 103 ops/sec ±0.93% (77 runs sampled)
+trace-mapping:    encoded Object input x 5.42 ops/sec ±28.54% (19 runs sampled)
+source-map-js:    encoded Object input x 1.07 ops/sec ±13.84% (7 runs sampled)
+source-map-0.6.1: encoded Object input x 0.60 ops/sec ±2.43% (6 runs sampled)
+Chrome dev tools: encoded Object input x 2.61 ops/sec ±22.00% (11 runs sampled)
+Fastest is trace-mapping:    decoded Object input
+
+Trace speed (random):
+trace-mapping:    decoded originalPositionFor x 257,019 ops/sec ±0.97% (93 runs sampled)
+trace-mapping:    encoded originalPositionFor x 179,163 ops/sec ±0.83% (92 runs sampled)
+source-map-js:    encoded originalPositionFor x 73,337 ops/sec ±1.35% (87 runs sampled)
+source-map-0.6.1: encoded originalPositionFor x 38,797 ops/sec ±1.66% (88 runs sampled)
+source-map-0.8.0: encoded originalPositionFor x 107,758 ops/sec ±1.94% (45 runs sampled)
+Chrome dev tools: encoded originalPositionFor x 188,550 ops/sec ±1.85% (79 runs sampled)
+Fastest is trace-mapping:    decoded originalPositionFor
+
+Trace speed (ascending):
+trace-mapping:    decoded originalPositionFor x 447,621 ops/sec ±3.64% (94 runs sampled)
+trace-mapping:    encoded originalPositionFor x 323,698 ops/sec ±5.20% (88 runs sampled)
+source-map-js:    encoded originalPositionFor x 78,387 ops/sec ±1.69% (89 runs sampled)
+source-map-0.6.1: encoded originalPositionFor x 41,016 ops/sec ±3.01% (25 runs sampled)
+source-map-0.8.0: encoded originalPositionFor x 124,204 ops/sec ±0.90% (92 runs sampled)
+Chrome dev tools: encoded originalPositionFor x 230,087 ops/sec ±2.61% (93 runs sampled)
+Fastest is trace-mapping:    decoded originalPositionFor
 ```
 
-```js
-import fs from 'fs'
-import YAML from 'yaml'
-
-YAML.parse('3.14159')
-// 3.14159
-
-YAML.parse('[ true, false, maybe, null ]\n')
-// [ true, false, 'maybe', null ]
-
-const file = fs.readFileSync('./file.yml', 'utf8')
-YAML.parse(file)
-// { YAML:
-//   [ 'A human-readable data serialization language',
-//     'https://en.wikipedia.org/wiki/YAML' ],
-//   yaml:
-//   [ 'A complete JavaScript implementation',
-//     'https://www.npmjs.com/package/yaml' ] }
-```
-
-## YAML.stringify
-
-```js
-import YAML from 'yaml'
-
-YAML.stringify(3.14159)
-// '3.14159\n'
-
-YAML.stringify([true, false, 'maybe', null])
-// `- true
-// - false
-// - maybe
-// - null
-// `
-
-YAML.stringify({ number: 3, plain: 'string', block: 'two\nlines\n' })
-// `number: 3
-// plain: string
-// block: |
-//   two
-//   lines
-// `
-```
-
----
-
-Browser testing provided by:
-
-<a href="https://www.browserstack.com/open-source">
-<img width=200 src="https://eemeli.org/yaml/images/browserstack.svg" alt="BrowserStack" />
-</a>
+[source-map]: https://www.npmjs.com/package/source-map

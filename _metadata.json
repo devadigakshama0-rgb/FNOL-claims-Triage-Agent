@@ -1,0 +1,54 @@
+{
+  "hash": "7de553fc",
+  "configHash": "b9f7afa0",
+  "lockfileHash": "9b230c59",
+  "browserHash": "a8fb79f4",
+  "optimized": {
+    "react-dom": {
+      "src": "../../react-dom/index.js",
+      "file": "react-dom.js",
+      "fileHash": "20c0d1e7",
+      "needsInterop": true
+    },
+    "react-dom/client": {
+      "src": "../../react-dom/client.js",
+      "file": "react-dom_client.js",
+      "fileHash": "416f318c",
+      "needsInterop": true
+    },
+    "react": {
+      "src": "../../react/index.js",
+      "file": "react.js",
+      "fileHash": "f1e3e17b",
+      "needsInterop": true
+    },
+    "react/jsx-dev-runtime": {
+      "src": "../../react/jsx-dev-runtime.js",
+      "file": "react_jsx-dev-runtime.js",
+      "fileHash": "511c18c6",
+      "needsInterop": true
+    },
+    "react/jsx-runtime": {
+      "src": "../../react/jsx-runtime.js",
+      "file": "react_jsx-runtime.js",
+      "fileHash": "5905a8c9",
+      "needsInterop": true
+    },
+    "recharts": {
+      "src": "../../recharts/es6/index.js",
+      "file": "recharts.js",
+      "fileHash": "d9347b70",
+      "needsInterop": false
+    }
+  },
+  "chunks": {
+    "react-D57lpOvP": {
+      "file": "react-D57lpOvP.js",
+      "isDynamicEntry": false
+    },
+    "react-dom-CAgWe78a": {
+      "file": "react-dom-CAgWe78a.js",
+      "isDynamicEntry": false
+    }
+  }
+}
